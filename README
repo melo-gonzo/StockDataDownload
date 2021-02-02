@@ -24,6 +24,7 @@ Command Line Arguments:
 
 To use the script, follow these simple steps.
 
+0. Install dependencies using pip install -r requirements.txt
 1. Set up a default list of tickers. This can be a blank text file, or a list of tickers each on their own new line, saved as a text file.
 2. Set up a directory to save csv files to.
 3. Optionally, change the default ticker_location and csv_location file paths in the script itself.
