@@ -1,10 +1,12 @@
 This script is useful for downloading stock market data for a wide range of companies specified by their respective tickers. The script reads in the desired tickers and interacts with yahoo finance to download and save csv files containing information for: Date, Open, High, Low, Close, Adjusted Close, and Volume. Once data for a ticker is downloaded and stored, further requests for data will simply append the most recent information onto the existing csv file. Additionally, each time a user requests downloads, a list of the successful and failed requests will be generated. 
 
+
 A few important notes:
 -Most importantly, HUGE shoutout to https://github.com/bradlucas/get-yahoo-quotes-python for the repo on downloading historic data from yahoo finance. My code is build on top of the work done there, which was a huge time saver.
 -Make sure to set up the directories for your ticker_location and csv_location.
 -The default behavior is to download as much data that yahoo finance can provide.
 -This data is daily historic data
+
 
 There are 5 command line arguments which may be helpful to facilitate the data download process, which may either be used directly in the terminal, or have their defaults set by modifying the download_data.py script.
 
@@ -29,6 +31,22 @@ To use the script, follow these simple steps.
 2. Set up a directory to save csv files to.
 3. Optionally, change the default ticker_location and csv_location file paths in the script itself.
 4. Run the script download_data.py from the command line, or your favorite IDE.
+
+Examples: 
+
+Download using a pre-saved list of tickers
+
+python download_data.py --ticker_location /home/user/Desktop/tickers.txt --csv_location /home/user/Desktop/CSVFiles/
+
+Download data using a string of tickers without referencing a tickers.txt file
+
+python download_data.py --csv_location /home/user/Desktop/CSVFiles/ --add_tickers "GME,AMC,AAPL,TSLA,SPY"
+
+Download data using a string of tickers with referencing a tickers.txt file
+
+python download_data.py --csv_location /home/user/Desktop/CSVFiles/ --ticker_location /home/user/Desktop/tickers.txt --add_tickers "GME,AMC,AAPL,TSLA,SPY"
+
+
 
 From here, the rest is history (pun intended ;)). When downloading from a pre-saved list of tickers, the computer will open as many threads as it can to speed up this highly parallelizable process to get you your data as quick as possible. Once its finished, you'll find all the data in your csv_location folder!
 
