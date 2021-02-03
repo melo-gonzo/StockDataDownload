@@ -136,6 +136,7 @@ def gather_tickers(ticker_list):
     tickers = open(ticker_list, 'r')
     tickers = tickers.read()
     tickers = tickers.split('\n')
+    tickers = [ticker for ticker in tickers if ticker != '']
     return tickers
 
 
@@ -212,7 +213,7 @@ def main():
     args = parser()
     check_arguments_errors(args)
     if args.add_tickers == '' and args.remove_tickers == '':
-        tickers = gather_tickers(args.ticker_location)[:-1]
+        tickers = gather_tickers(args.ticker_location)
         download_parallel_quotes(tickers, args.ticker_location, args.csv_location, args.verbose)
     elif args.add_tickers != '':
         download_quotes(args)
