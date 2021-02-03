@@ -151,7 +151,8 @@ def download_parallel_quotes(symbols, list_location, csv_location, verbose):
 
 def download_quotes(args):
     with open(args.ticker_location, 'r') as tickers:
-        tickers = tickers.read().split('\n')[:-1]
+        tickers = tickers.read().split('\n')
+        tickers = [ticker for ticker in tickers if ticker != '']
     new = list(args.add_tickers.split(','))
     new = [n for n in new if n not in tickers]
     for symbol in new:
@@ -165,7 +166,8 @@ def download_quotes(args):
 
 def remove_tickers(args):
     with open(args.ticker_location, 'r') as tickers:
-        tickers = tickers.read().split('\n')[:-1]
+        tickers = tickers.read().split('\n')
+        tickers = [ticker for ticker in tickers if ticker != '']
     remove = list(args.remove_tickers.split(','))
     tickers = [n for n in tickers if n not in remove]
     tickers = list(set(tickers))
@@ -182,7 +184,7 @@ def remove_tickers(args):
 def parser():
     parser = argparse.ArgumentParser(description='Stock Market Ticker Downloader')
     parser.add_argument("--ticker_location",
-                        default='/home/carmelo/Documents/StockMarket/TickerLists/tickers.txt',
+                        default='/home/carmelo/Desktop/YEET/tickers.txt',
                         help="path pointing to a list of tickers to download. must be from text file. tickers seperated by newline")
     parser.add_argument("--csv_location", default='/home/carmelo/Documents/StockMarket/CSVFiles/',
                         help="path pointing to location to save csv files, ex. /home/user/Desktop/CSVFiles/")
@@ -199,8 +201,10 @@ def parser():
 
 def check_arguments_errors(args):
     if not os.path.exists(args.csv_location):
+        print('Please create a file to store csv files and update the default location inside the parser() function.')
         raise (ValueError("Invalid csv_location path {}".format(os.path.abspath(args.config_file))))
     if not os.path.exists(args.ticker_location):
+        print('Please create a file to store ticker names and update the default location inside the parser() function.')
         raise (ValueError("Invalid ticker_location path {}".format(os.path.abspath(args.weights))))
 
 
