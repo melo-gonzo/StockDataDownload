@@ -19,13 +19,11 @@ def find_crumb_store(lines):
     for l in lines:
         if re.findall(r'CrumbStore', l):
             return l
-    # print("Did not find CrumbStore")
 
 
 def get_cookie_value(r):
     if not r.cookies:
         return
-        # return print('No Cookie')
     return {'B': r.cookies['B']}
 
 
@@ -78,7 +76,6 @@ def get_data(symbol, start_date, end_date, cookie, crumb, append_to_file, csv_lo
     if not append_to_file:
         block = response.content[:1].decode('UTF-8')
         if block == '{' or block == '4':
-            yeet = 1
             return False
         with open(filename, 'wb') as handle:
             for block in response.iter_content(1024):
@@ -126,7 +123,7 @@ def dq(symbol, list_location='', csv_location='', verbose=True):
     if data_saved and list_location != '':
         with open(''.join(list_location.split('.')[:-1]) + '_completed_list.txt', 'a') as complete:
             complete.write('\n' + symbol)
-    if verbose and not data_saved: print(symbol + ' Download Successful')
+    if verbose and not data_saved: print(symbol + ' Download Unsuccessful')
     if not data_saved and list_location != '':
         with open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'a') as failed:
             failed.write('\n' + symbol)
@@ -140,12 +137,15 @@ def gather_tickers(ticker_list):
     return tickers
 
 
-def download_parallel_quotes(symbols, list_location, csv_location, verbose):
+def download_parallel_quotes(symbols, args):
+    list_location = args.ticker_location
+    csv_location = args.csv_location
+    verbose = args.verbose
     with open(''.join(list_location.split('.')[:-1]) + '_completed_list.txt', 'w') as complete:
         pass
     with open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'w') as failed:
         pass
-    pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+    pool = multiprocessing.Pool(processes=int(multiprocessing.cpu_count()))
     dfunc = partial(dq, list_location=list_location, csv_location=csv_location, verbose=verbose)
     output = pool.map(dfunc, symbols)
 
@@ -156,7 +156,9 @@ def download_quotes(args):
         tickers = [ticker for ticker in tickers if ticker != '']
     new = list(args.add_tickers.split(','))
     new = [n for n in new if n not in tickers]
-    for symbol in new:
+    total = len(new)
+    for current, symbol in enumerate(new):
+        waitbar(total, current)
         dq(symbol, csv_location=args.csv_location, verbose=args.verbose)
     tickers.extend(new)
     tickers = list(set(tickers))
@@ -185,7 +187,7 @@ def remove_tickers(args):
 def parser():
     parser = argparse.ArgumentParser(description='Stock Market Ticker Downloader')
     parser.add_argument("--ticker_location",
-                        default='/home/carmelo/Desktop/YEET/tickers.txt',
+                        default='/home/carmelo/Documents/StockMarket/TickerLists/tickers.txt',
                         help="path pointing to a list of tickers to download. must be from text file. tickers seperated by newline")
     parser.add_argument("--csv_location", default='/home/carmelo/Documents/StockMarket/CSVFiles/',
                         help="path pointing to location to save csv files, ex. /home/user/Desktop/CSVFiles/")
@@ -195,6 +197,8 @@ def parser():
     parser.add_argument("--remove_tickers", default='', type=str,
                         help="remove data for a tickers . input as string, ex. 'GOOG', or 'GOOG,AAPL,TSLA'."
                              " separate by commas only. works when not pointing to a list of tickers already")
+    parser.add_argument("--multitry", default=True, type=bool,
+                        help="bool to indicate trying to download list of bad tickers once initial try is complete")
     parser.add_argument("--verbose", default=True, type=bool,
                         help="print status of downloading or not")
     return parser.parse_args()
@@ -202,11 +206,23 @@ def parser():
 
 def check_arguments_errors(args):
     if not os.path.exists(args.csv_location):
-        print('Please create a file to store csv files and update the default location inside the parser() function.')
+        print('Please create a file to store csv files and update the default location inside parser().')
         raise (ValueError("Invalid csv_location path {}".format(os.path.abspath(args.config_file))))
     if not os.path.exists(args.ticker_location):
-        print('Please create a file to store ticker names and update the default location inside the parser() function.')
+        print('Please create a file to store ticker names and update the default location inside the parser().')
         raise (ValueError("Invalid ticker_location path {}".format(os.path.abspath(args.weights))))
+
+
+def do_multitry(args):
+    bad_list = open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'r').read().split('\n')
+    bad_list = [bl for bl in bad_list if bl != '']
+    args.remove_tickers = ','.join(bad_list)
+    remove_tickers(args)
+    download_parallel_quotes(bad_list, args)
+    # bad_list = open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'r').read().split('\n')
+    # bad_list = [bl for bl in bad_list if bl != '']
+    # args.remove_tickers = ','.join(bad_list)
+    # remove_tickers(args)
 
 
 def main():
@@ -214,7 +230,9 @@ def main():
     check_arguments_errors(args)
     if args.add_tickers == '' and args.remove_tickers == '':
         tickers = gather_tickers(args.ticker_location)
-        download_parallel_quotes(tickers, args.ticker_location, args.csv_location, args.verbose)
+        download_parallel_quotes(tickers, args)
+        if args.multitry:
+            do_multitry(args)
     elif args.add_tickers != '':
         download_quotes(args)
     elif args.remove_tickers != '':
