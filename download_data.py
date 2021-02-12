@@ -214,7 +214,7 @@ def check_arguments_errors(args):
 
 
 def do_multitry(args):
-    bad_list = open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'r').read().split('\n')
+    bad_list = open(''.join(args.ticker_location.split('.')[:-1]) + '_failed_list.txt', 'r').read().split('\n')
     bad_list = [bl for bl in bad_list if bl != '']
     args.remove_tickers = ','.join(bad_list)
     remove_tickers(args)
