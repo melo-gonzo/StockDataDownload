@@ -60,7 +60,12 @@ def get_data(symbol, start_date, end_date, cookie, crumb, append_to_file, csv_lo
     filename = csv_location + '%s.csv' % (symbol)
     url = "https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%s&period2=%s&interval=1d&events=history&crumb=%s" % (
         symbol, start_date, end_date, crumb)
-    response = requests.get(url, cookies=cookie, timeout=10)
+    headers = {'User-Agent': 'Carmelo'}
+    print(url)
+    try:
+        response = requests.get(url, cookies=cookie, headers=headers, timeout=10)
+    except Exception:
+        return False
     block = response.content[:1].decode('UTF-8')
     if block == '{' or block == '4':
         return False
@@ -187,9 +192,9 @@ def remove_tickers(args):
 def parser():
     parser = argparse.ArgumentParser(description='Stock Market Ticker Downloader')
     parser.add_argument("--ticker_location",
-                        default='/home/carmelo/Documents/StockMarket/TickerLists/tickers.txt',
+                        default='/home/carmelo/Projects/StockMarket/TickerLists/test_list.txt',
                         help="path pointing to a list of tickers to download. must be from text file. tickers seperated by newline")
-    parser.add_argument("--csv_location", default='/home/carmelo/Documents/StockMarket/CSVFiles/',
+    parser.add_argument("--csv_location", default='/home/carmelo/Projects/StockMarket/CSVFiles/',
                         help="path pointing to location to save csv files, ex. /home/user/Desktop/CSVFiles/")
     parser.add_argument("--add_tickers", default='', type=str,
                         help="download data for a tickers and add to list. input as string, ex. 'GOOG', or 'GOOG,AAPL,TSLA'."
@@ -225,7 +230,7 @@ def do_multitry(args):
     # remove_tickers(args)
 
 
-def main():
+def download_data():
     args = parser()
     check_arguments_errors(args)
     if args.add_tickers == '' and args.remove_tickers == '':
@@ -242,4 +247,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    download_data()
+
