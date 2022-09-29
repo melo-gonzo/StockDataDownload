@@ -9,41 +9,6 @@ import multiprocessing
 from functools import partial
 
 
-def split_crumb_store(v):
-    if v is None:
-        return
-    return v.split(":")[2].strip('"')
-
-
-def find_crumb_store(lines):
-    for l in lines:
-        if re.findall(r"CrumbStore", l):
-            return l
-
-
-def get_cookie_value(r):
-    if not r.cookies:
-        return
-    print(r.cookies["B"])
-    return {"B": r.cookies["B"]}
-
-
-def get_page_data(symbol):
-    url = "https://finance.yahoo.com/quote/%s/?p=%s" % (symbol, symbol)
-    headers = {"User-Agent": "Chrome"}
-    r = requests.get(url, headers=headers, timeout=10)
-    cookie = get_cookie_value(r)
-    lines = r.content.decode("latin-1").replace("\\", "")
-    lines = lines.replace("}", "\n")
-    return cookie, lines.split("\n")
-
-
-def get_cookie_crumb(symbol):
-    cookie, lines = get_page_data(symbol)
-    crumb = split_crumb_store(find_crumb_store(lines))
-    return cookie, crumb
-
-
 def get_now_epoch():
     return int(time.time())
 
@@ -58,21 +23,22 @@ def waitbar(total, current):
     print(advance + retreat + " " + str(np.round(percent_complete, 3)) + "%", end="\r")
 
 
-def get_data(symbol, start_date, end_date, cookie, crumb, append_to_file, csv_location):
+def get_data(symbol, start_date, end_date, append_to_file, csv_location):
     filename = csv_location + "%s.csv" % (symbol)
     url = (
-        "https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%s&period2=%s&interval=1d&events=history&crumb=%s"
-        % (symbol, start_date, end_date, crumb)
+        "https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%s&period2=%s&interval=1d&events=history&includeAdjustedClose=true"
+        % (symbol, start_date, end_date)
     )
     headers = {"User-Agent": "Chrome"}
     print(url)
     try:
-        response = requests.get(url, cookies=cookie, headers=headers, timeout=20)
-        print(response)
+        with requests.Session() as s:
+            response = s.get(url, headers=headers, timeout=20)
+            print(response.status_code)
     except Exception:
         return False
     block = response.content[:1].decode("UTF-8")
-    if block == "{" or block == "4":
+    if response.status_code != 200:
         return False
     if append_to_file:
         for block in response.iter_content(1024):
@@ -116,7 +82,6 @@ def dq(symbol, list_location="", csv_location="", verbose=True):
             present = False
             os.remove(filename)
     end_date = get_now_epoch()
-    cookie, crumb = get_cookie_crumb(symbol)
     if verbose:
         print("--------------------------------------------------")
         print("Downloading %s to %s.csv" % (symbol, symbol))
@@ -145,10 +110,8 @@ def dq(symbol, list_location="", csv_location="", verbose=True):
     attempts = 0
     while attempts < 5 and not data_saved:
         data_saved = get_data(
-            symbol, start_date, end_date, cookie, crumb, append_to_file, csv_location
+            symbol, start_date, end_date, append_to_file, csv_location
         )
-        if data_saved == False:
-            cookie, crumb = get_cookie_crumb(symbol)
         attempts += 1
     if verbose and data_saved:
         print(symbol + " Download Successful")
@@ -272,7 +235,9 @@ def check_arguments_errors(args):
         )
         raise (
             ValueError(
-                "Invalid csv_location path {}".format(os.path.abspath(args.csv_location))
+                "Invalid csv_location path {}".format(
+                    os.path.abspath(args.csv_location)
+                )
             )
         )
     if not os.path.exists(args.ticker_location):
@@ -281,7 +246,9 @@ def check_arguments_errors(args):
         )
         raise (
             ValueError(
-                "Invalid ticker_location path {}".format(os.path.abspath(args.ticker_location))
+                "Invalid ticker_location path {}".format(
+                    os.path.abspath(args.ticker_location)
+                )
             )
         )
 
