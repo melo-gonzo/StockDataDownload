@@ -149,12 +149,12 @@ def download_parallel_quotes(symbols, args):
         "".join(list_location.split(".")[:-1]) + "_failed_list.txt", "w"
     ) as failed:
         pass
-    pool = multiprocessing.Pool(processes=int(multiprocessing.cpu_count()))
-    dfunc = partial(
-        dq, list_location=list_location, csv_location=csv_location, verbose=verbose
-    )
-    output = pool.map(dfunc, symbols)
-
+    # pool = multiprocessing.Pool(processes=int(multiprocessing.cpu_count()))
+    # dfunc = partial(
+    #     dq, list_location=list_location, csv_location=csv_location, verbose=verbose
+    # )
+    # output = pool.map(dfunc, symbols)
+    dq(list_location=list_location, csv_location=csv_location, verbose=verbose)
 
 def download_quotes(args):
     with open(args.ticker_location, "r") as tickers:
