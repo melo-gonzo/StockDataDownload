@@ -41,23 +41,20 @@ def get_data(symbol, start_date, end_date, append_to_file, csv_location):
     if response.status_code != 200:
         return False
     if append_to_file:
-        for block in response.iter_content(1024):
-            pass
+        block = response.text
+        block = "".join(block.split("\n")[1:-1])
         with open(filename, "r") as open_file:
-            new_handle = bytes(
-                "\n".join(open_file.read().split("\n")[:-3]) + "\n", "utf-8"
-            )
-        with open(filename, "wb") as new_csv:
-            new_csv.write(new_handle)
-            new_csv.write(block[42:])
+            old_data = "\n".join(open_file.read().split("\n")[:-3]) + "\n"
+        with open(filename, "w") as new_csv:
+            new_csv.write(old_data)
+            new_csv.write(block)
             return True
     if not append_to_file:
-        block = response.content[:1].decode("UTF-8")
-        if block == "{" or block == "4":
+        if response.status_code != 200:
             return False
-        with open(filename, "wb") as handle:
-            for block in response.iter_content(1024):
-                handle.write(block)
+        with open(filename, "w") as handle:
+            block = response.text
+            handle.write(block)
             return True
     return False
 
@@ -154,7 +151,14 @@ def download_parallel_quotes(symbols, args):
     #     dq, list_location=list_location, csv_location=csv_location, verbose=verbose
     # )
     # output = pool.map(dfunc, symbols)
-    dq(list_location=list_location, csv_location=csv_location, verbose=verbose)
+    for symbol in symbols:
+        dq(
+            symbol,
+            list_location=list_location,
+            csv_location=csv_location,
+            verbose=verbose,
+        )
+
 
 def download_quotes(args):
     with open(args.ticker_location, "r") as tickers:
