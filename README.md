@@ -3,7 +3,6 @@ This script is useful for downloading stock market data for a wide range of comp
 
 
 A few important notes:
-* Most importantly, HUGE shoutout to https://github.com/bradlucas/get-yahoo-quotes-python for the repo on downloading historic data from yahoo finance. My code is build on top of the work done there, which was a huge time saver.
 * Make sure to set up the directories for your `ticker_location` and `csv_location`.
 * The default behavior is to download as much data that yahoo finance can provide.
 * This data is *daily historic data*
