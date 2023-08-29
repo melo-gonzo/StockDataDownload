@@ -1,12 +1,12 @@
-import re
+import argparse
+import datetime
+import multiprocessing
 import os
 import time
-import requests
-import datetime
-import argparse
-import numpy as np
-import multiprocessing
 from functools import partial
+
+import numpy as np
+import requests
 
 
 def get_now_epoch():
@@ -42,7 +42,7 @@ def get_data(symbol, start_date, end_date, append_to_file, csv_location):
         return False
     if append_to_file:
         block = response.text
-        block = "".join(block.split("\n")[1:-1])
+        block = "\n".join(block.split("\n")[1:-1])
         with open(filename, "r") as open_file:
             old_data = "\n".join(open_file.read().split("\n")[:-3]) + "\n"
         with open(filename, "w") as new_csv:
@@ -146,18 +146,24 @@ def download_parallel_quotes(symbols, args):
         "".join(list_location.split(".")[:-1]) + "_failed_list.txt", "w"
     ) as failed:
         pass
-    pool = multiprocessing.Pool(processes=int(multiprocessing.cpu_count()))
-    dfunc = partial(
-        dq, list_location=list_location, csv_location=csv_location, verbose=verbose
-    )
-    output = pool.map(dfunc, symbols)
-    # for symbol in symbols:
-    #     dq(
-    #         symbol,
-    #         list_location=list_location,
-    #         csv_location=csv_location,
-    #         verbose=verbose,
-    #     )
+    if args.num_workers == -1:
+        num_workers = multiprocessing.cpu_count()
+    else:
+        num_workers = args.num_workers
+    if num_workers == 1:
+        for symbol in symbols:
+            dq(
+                symbol,
+                list_location=list_location,
+                csv_location=csv_location,
+                verbose=verbose,
+            )
+    else:
+        pool = multiprocessing.Pool(processes=int(num_workers))
+        dfunc = partial(
+            dq, list_location=list_location, csv_location=csv_location, verbose=verbose
+        )
+        output = pool.map(dfunc, symbols)
 
 
 def download_quotes(args):
@@ -225,6 +231,12 @@ def parser():
         default=True,
         type=bool,
         help="bool to indicate trying to download list of bad tickers once initial try is complete",
+    )
+    parser.add_argument(
+        "--num_workers",
+        default=-1,
+        type=int,
+        help="how many workers to use to parallelize download. defaul -1  for all",
     )
     parser.add_argument(
         "--verbose", default=True, type=bool, help="print status of downloading or not"
