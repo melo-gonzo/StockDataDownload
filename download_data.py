@@ -3,303 +3,402 @@ import datetime
 import multiprocessing
 import os
 import time
-from functools import partial
+from pathlib import Path
 
-import numpy as np
-import requests
+import yfinance as yf
+import pandas as pd
+from tqdm import tqdm
 
 
 def get_now_epoch():
+    """Get current timestamp as epoch"""
     return int(time.time())
 
 
-def waitbar(total, current):
-    current += 1
-    percent_complete = 100 * (current / total)
-    here_sym = ">"
-    complete_sym = "-"
-    advance = str(int(np.round((percent_complete / 2) - 1)) * complete_sym + here_sym)
-    retreat = str(int(np.round(((100 - percent_complete) / 2) - 1)) * ".")
-    print(advance + retreat + " " + str(np.round(percent_complete, 3)) + "%", end="\r")
+def download_ticker_data(
+    symbol,
+    start_date=None,
+    end_date=None,
+    csv_location="./",
+    append_to_file=False,
+    verbose=True,
+):
+    """
+    Download historical data for a single ticker using yfinance
 
+    Args:
+        symbol: Stock ticker symbol
+        start_date: Start date (epoch timestamp or datetime string)
+        end_date: End date (epoch timestamp or datetime string)
+        csv_location: Directory to save CSV files
+        append_to_file: Whether to append to existing file
+        verbose: Print status messages
 
-def get_data(symbol, start_date, end_date, append_to_file, csv_location):
-    filename = csv_location + "%s.csv" % (symbol)
-    url = (
-        "https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%s&period2=%s&interval=1d&events=history&includeAdjustedClose=true"
-        % (symbol, start_date, end_date)
-    )
-    headers = {"User-Agent": "Chrome"}
-    print(url)
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    filename = Path(csv_location) / f"{symbol}.csv"
+
     try:
-        with requests.Session() as s:
-            response = s.get(url, headers=headers, timeout=20)
-            print(response.status_code)
-    except Exception:
-        return False
-    block = response.content[:1].decode("UTF-8")
-    if response.status_code != 200:
-        return False
-    if append_to_file:
-        block = response.text
-        block = "\n".join(block.split("\n")[1:-1])
-        with open(filename, "r") as open_file:
-            old_data = "\n".join(open_file.read().split("\n")[:-3]) + "\n"
-        with open(filename, "w") as new_csv:
-            new_csv.write(old_data)
-            new_csv.write(block)
-            return True
-    if not append_to_file:
-        if response.status_code != 200:
-            return False
-        with open(filename, "w") as handle:
-            block = response.text
-            handle.write(block)
-            return True
-    return False
+        # Create ticker object
+        ticker = yf.Ticker(symbol)
 
-
-def dq(symbol, list_location="", csv_location="", verbose=True):
-    if list_location != "":
-        waitbar(
-            len(open(list_location, "r").read().split("\n")),
-            len(
-                open(
-                    "".join(list_location.split(".")[:-1]) + "_completed_list.txt", "r"
+        # Convert epoch timestamps to datetime strings if needed
+        if start_date:
+            if isinstance(start_date, (int, float)):
+                start_date = datetime.datetime.fromtimestamp(start_date).strftime(
+                    "%Y-%m-%d"
                 )
-                .read()
-                .split("\n")
-            ),
-        )
-    csv_present = os.listdir(csv_location)
-    filename = csv_location + "%s.csv" % (symbol)
-    present = symbol + ".csv" in csv_present
-    if present:
-        if os.path.getsize(filename) < 1000:
-            present = False
-            os.remove(filename)
-    end_date = get_now_epoch()
-    if verbose:
-        print("--------------------------------------------------")
-        print("Downloading %s to %s.csv" % (symbol, symbol))
-    if not present:
-        append_to_file = False
-        start_date = 0
-    else:
-        append_to_file = True
-        last_time = (
-            open(csv_location + symbol + ".csv", "r")
-            .read()
-            .split("\n")[-3]
-            .split(",")[0]
-        )
-        if "}" in last_time:
-            os.remove(filename)
-            start_date = 0
-            append_to_file = False
         else:
-            start_date = int(
-                datetime.datetime.timestamp(
-                    datetime.datetime.strptime(last_time, "%Y-%m-%d")
+            start_date = "1900-01-01"  # Default to very early date
+
+        if end_date:
+            if isinstance(end_date, (int, float)):
+                end_date = datetime.datetime.fromtimestamp(end_date).strftime(
+                    "%Y-%m-%d"
                 )
-            )
-    data_saved = False
-    attempts = 0
-    while attempts < 5 and not data_saved:
-        data_saved = get_data(
-            symbol, start_date, end_date, append_to_file, csv_location
-        )
-        attempts += 1
-    if verbose and data_saved:
-        print(symbol + " Download Successful")
-    if data_saved and list_location != "":
-        with open(
-            "".join(list_location.split(".")[:-1]) + "_completed_list.txt", "a"
-        ) as complete:
-            complete.write("\n" + symbol)
-    if verbose and not data_saved:
-        print(symbol + " Download Unsuccessful")
-    if not data_saved and list_location != "":
-        with open(
-            "".join(list_location.split(".")[:-1]) + "_failed_list.txt", "a"
-        ) as failed:
-            failed.write("\n" + symbol)
+        else:
+            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        # Download historical data
+        if verbose:
+            print(f"Downloading {symbol} from {start_date} to {end_date}")
+
+        hist_data = ticker.history(start=start_date, end=end_date)
+
+        if hist_data.empty:
+            if verbose:
+                print(f"No data found for {symbol}")
+            return False
+
+        # Prepare data for saving
+        hist_data.index = hist_data.index.strftime("%Y-%m-%d")
+        hist_data.index.name = "Date"
+
+        # Reset index to make Date a column (to match original format)
+        hist_data = hist_data.reset_index()
+
+        if append_to_file and filename.exists():
+            # Read existing data
+            try:
+                existing_data = pd.read_csv(filename)
+                # Combine data and remove duplicates
+                combined_data = pd.concat([existing_data, hist_data]).drop_duplicates(
+                    subset=["Date"]
+                )
+                combined_data = combined_data.sort_values("Date")
+                combined_data.to_csv(filename, index=False)
+            except Exception as e:
+                if verbose:
+                    print(f"Error appending data for {symbol}: {e}")
+                # If append fails, save as new file
+                hist_data.to_csv(filename, index=False)
+        else:
+            # Save new file
+            hist_data.to_csv(filename, index=False)
+
+        if verbose:
+            print(f"{symbol} download successful")
+        return True
+
+    except Exception as e:
+        if verbose:
+            print(f"Error downloading {symbol}: {str(e)}")
+        return False
 
 
-def gather_tickers(ticker_list):
-    tickers = open(ticker_list, "r")
-    tickers = tickers.read()
-    tickers = tickers.split("\n")
-    tickers = [ticker for ticker in tickers if ticker != ""]
+def process_single_ticker(args_tuple):
+    """Wrapper function for multiprocessing"""
+    (
+        symbol,
+        start_date,
+        end_date,
+        csv_location,
+        append_to_file,
+        verbose,
+        list_location,
+    ) = args_tuple
+
+    # Check if file exists and determine if we need to append
+    filename = Path(csv_location) / f"{symbol}.csv"
+
+    if filename.exists() and filename.stat().st_size > 1000:
+        # File exists and has reasonable size, try to append new data
+        try:
+            existing_data = pd.read_csv(filename)
+            if not existing_data.empty and "Date" in existing_data.columns:
+                last_date = existing_data["Date"].iloc[-1]
+                start_date = int(
+                    datetime.datetime.strptime(last_date, "%Y-%m-%d").timestamp()
+                )
+                append_to_file = True
+        except Exception:
+            # If we can't read the existing file, download from scratch
+            append_to_file = False
+            start_date = None
+    else:
+        # File doesn't exist or is too small
+        append_to_file = False
+        start_date = None
+
+    success = download_ticker_data(
+        symbol, start_date, end_date, csv_location, append_to_file, verbose
+    )
+
+    # Log results if list_location is provided
+    if list_location:
+        if success:
+            completed_file = Path(list_location).stem + "_completed_list.txt"
+            with open(completed_file, "a") as f:
+                f.write(f"{symbol}\n")
+        else:
+            failed_file = Path(list_location).stem + "_failed_list.txt"
+            with open(failed_file, "a") as f:
+                f.write(f"{symbol}\n")
+
+    return success
+
+
+def gather_tickers(ticker_file):
+    """Read tickers from file"""
+    with open(ticker_file, "r") as f:
+        tickers = [line.strip() for line in f if line.strip()]
     return tickers
 
 
 def download_parallel_quotes(symbols, args):
-    list_location = args.ticker_location
+    """Download quotes in parallel"""
     csv_location = args.csv_location
     verbose = args.verbose
-    with open(
-        "".join(list_location.split(".")[:-1]) + "_completed_list.txt", "w"
-    ) as complete:
-        pass
-    with open(
-        "".join(list_location.split(".")[:-1]) + "_failed_list.txt", "w"
-    ) as failed:
-        pass
-    if args.num_workers == -1:
-        num_workers = multiprocessing.cpu_count()
+    list_location = args.ticker_location
+    end_date = get_now_epoch()
+
+    # Initialize log files
+    if list_location:
+        completed_file = Path(list_location).stem + "_completed_list.txt"
+        failed_file = Path(list_location).stem + "_failed_list.txt"
+
+        # Clear existing log files
+        with open(completed_file, "w") as _:
+            pass
+        with open(failed_file, "w") as _:
+            pass
+
+    # Prepare arguments for multiprocessing
+    args_list = [
+        (symbol, None, end_date, csv_location, False, verbose, list_location)
+        for symbol in symbols
+    ]
+
+    if args.num_workers == 1:
+        # Sequential processing
+        for args_tuple in tqdm(args_list, desc="Downloading tickers"):
+            process_single_ticker(args_tuple)
     else:
-        num_workers = args.num_workers
-    if num_workers == 1:
-        for symbol in symbols:
-            dq(
-                symbol,
-                list_location=list_location,
-                csv_location=csv_location,
-                verbose=verbose,
-            )
-    else:
-        pool = multiprocessing.Pool(processes=int(num_workers))
-        dfunc = partial(
-            dq, list_location=list_location, csv_location=csv_location, verbose=verbose
+        # Parallel processing
+        num_workers = (
+            multiprocessing.cpu_count() if args.num_workers == -1 else args.num_workers
         )
-        output = pool.map(dfunc, symbols)
+
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            list(
+                tqdm(
+                    pool.imap(process_single_ticker, args_list),
+                    total=len(args_list),
+                    desc="Downloading tickers",
+                )
+            )
 
 
-def download_quotes(args):
-    with open(args.ticker_location, "r") as tickers:
-        tickers = tickers.read().split("\n")
-        tickers = [ticker for ticker in tickers if ticker != ""]
-    new = list(args.add_tickers.split(","))
-    new = [n for n in new if n not in tickers]
-    total = len(new)
-    for current, symbol in enumerate(new):
-        waitbar(total, current)
-        dq(symbol, csv_location=args.csv_location, verbose=args.verbose)
-    tickers.extend(new)
-    tickers = list(set(tickers))
-    tickers.sort()
-    with open(args.ticker_location, "w") as t:
-        t.write("\n".join(tickers))
+def add_tickers(args):
+    """Add new tickers to the list and download their data"""
+    # Read existing tickers
+    if os.path.exists(args.ticker_location):
+        with open(args.ticker_location, "r") as f:
+            existing_tickers = [line.strip() for line in f if line.strip()]
+    else:
+        existing_tickers = []
+
+    # Parse new tickers
+    new_tickers = [t.strip() for t in args.add_tickers.split(",") if t.strip()]
+    new_tickers = [t for t in new_tickers if t not in existing_tickers]
+
+    if not new_tickers:
+        print("No new tickers to add")
+        return
+
+    # Download data for new tickers
+    print(f"Adding {len(new_tickers)} new tickers: {', '.join(new_tickers)}")
+
+    for symbol in tqdm(new_tickers, desc="Downloading new tickers"):
+        download_ticker_data(
+            symbol, csv_location=args.csv_location, verbose=args.verbose
+        )
+
+    # Update ticker list
+    all_tickers = sorted(list(set(existing_tickers + new_tickers)))
+    with open(args.ticker_location, "w") as f:
+        f.write("\n".join(all_tickers))
+
+    print(f"Added {len(new_tickers)} tickers to {args.ticker_location}")
 
 
 def remove_tickers(args):
-    with open(args.ticker_location, "r") as tickers:
-        tickers = tickers.read().split("\n")
-        tickers = [ticker for ticker in tickers if ticker != ""]
-    remove = list(args.remove_tickers.split(","))
-    tickers = [n for n in tickers if n not in remove]
-    tickers = list(set(tickers))
-    tickers.sort()
-    with open(args.ticker_location, "w") as t:
-        t.write("\n".join(tickers))
-    for ticker in remove:
-        try:
-            os.remove(args.csv_location + ticker + ".csv")
-        except FileNotFoundError:
-            pass
+    """Remove tickers from the list and delete their CSV files"""
+    if not os.path.exists(args.ticker_location):
+        print("Ticker file does not exist")
+        return
+
+    # Read existing tickers
+    with open(args.ticker_location, "r") as f:
+        existing_tickers = [line.strip() for line in f if line.strip()]
+
+    # Parse tickers to remove
+    remove_list = [t.strip() for t in args.remove_tickers.split(",") if t.strip()]
+
+    # Remove from list
+    remaining_tickers = [t for t in existing_tickers if t not in remove_list]
+
+    # Update ticker file
+    with open(args.ticker_location, "w") as f:
+        f.write("\n".join(sorted(remaining_tickers)))
+
+    # Remove CSV files
+    csv_location = Path(args.csv_location)
+    removed_count = 0
+
+    for ticker in remove_list:
+        csv_file = csv_location / f"{ticker}.csv"
+        if csv_file.exists():
+            csv_file.unlink()
+            removed_count += 1
+
+    print(f"Removed {len(remove_list)} tickers from list and {removed_count} CSV files")
 
 
-def parser():
-    parser = argparse.ArgumentParser(description="Stock Market Ticker Downloader")
+def create_argument_parser():
+    """Create and configure argument parser"""
+    parser = argparse.ArgumentParser(
+        description="Stock Market Ticker Downloader using yfinance"
+    )
+
     parser.add_argument(
         "--ticker_location",
-        default="/Users/carmelog/Projects/StockMarket/StockDataDownload/tickers.txt",
-        help="path pointing to a list of tickers to download. must be from text file. tickers seperated by newline",
+        default="./tickers.txt",
+        help="Path to text file containing list of tickers (one per line)",
     )
+
     parser.add_argument(
-        "--csv_location",
-        default="/Users/carmelog/Projects/StockMarket/StockDataDownload/csv_files/",
-        help="path pointing to location to save csv files, ex. /home/user/Desktop/CSVFiles/",
+        "--csv_location", default="./csv_files/", help="Directory to save CSV files"
     )
+
     parser.add_argument(
         "--add_tickers",
         default="",
         type=str,
-        help="download data for a tickers and add to list. input as string, ex. 'GOOG', or 'GOOG,AAPL,TSLA'."
-        " separate by commas only. works when not pointing to a list of tickers already",
+        help="Add tickers to list and download data. Format: 'AAPL' or 'AAPL,GOOGL,TSLA'",
     )
+
     parser.add_argument(
         "--remove_tickers",
         default="",
         type=str,
-        help="remove data for a tickers . input as string, ex. 'GOOG', or 'GOOG,AAPL,TSLA'."
-        " separate by commas only. works when not pointing to a list of tickers already",
+        help="Remove tickers from list and delete CSV files. Format: 'AAPL' or 'AAPL,GOOGL,TSLA'",
     )
+
     parser.add_argument(
-        "--multitry",
-        default=True,
-        type=bool,
-        help="bool to indicate trying to download list of bad tickers once initial try is complete",
+        "--multitry", default=True, type=bool, help="Retry downloading failed tickers"
     )
+
     parser.add_argument(
         "--num_workers",
         default=-1,
         type=int,
-        help="how many workers to use to parallelize download. defaul -1  for all",
+        help="Number of parallel workers (-1 for all CPU cores, 1 for sequential)",
     )
+
     parser.add_argument(
-        "--verbose", default=True, type=bool, help="print status of downloading or not"
+        "--verbose", default=True, type=bool, help="Print download status messages"
     )
-    return parser.parse_args()
+
+    return parser
 
 
-def check_arguments_errors(args):
-    if not os.path.exists(args.csv_location):
-        print(
-            "Please create a file to store csv files and update the default location inside parser()."
-        )
-        raise (
-            ValueError(
-                "Invalid csv_location path {}".format(
-                    os.path.abspath(args.csv_location)
-                )
-            )
-        )
-    if not os.path.exists(args.ticker_location):
-        print(
-            "Please create a file to store ticker names and update the default location inside the parser()."
-        )
-        raise (
-            ValueError(
-                "Invalid ticker_location path {}".format(
-                    os.path.abspath(args.ticker_location)
-                )
-            )
-        )
+def check_arguments(args):
+    """Validate command line arguments"""
+    # Create CSV directory if it doesn't exist
+    csv_path = Path(args.csv_location)
+    csv_path.mkdir(parents=True, exist_ok=True)
+
+    # Create ticker file if it doesn't exist
+    ticker_path = Path(args.ticker_location)
+    if not ticker_path.exists():
+        ticker_path.parent.mkdir(parents=True, exist_ok=True)
+        ticker_path.touch()
+        print(f"Created empty ticker file: {ticker_path}")
 
 
-def do_multitry(args):
-    bad_list = (
-        open("".join(args.ticker_location.split(".")[:-1]) + "_failed_list.txt", "r")
-        .read()
-        .split("\n")
-    )
-    bad_list = [bl for bl in bad_list if bl != ""]
-    args.remove_tickers = ",".join(bad_list)
+def retry_failed_downloads(args):
+    """Retry downloading tickers that failed in the previous attempt"""
+    failed_file = Path(args.ticker_location).stem + "_failed_list.txt"
+
+    if not os.path.exists(failed_file):
+        print("No failed downloads to retry")
+        return
+
+    with open(failed_file, "r") as f:
+        failed_tickers = [line.strip() for line in f if line.strip()]
+
+    if not failed_tickers:
+        print("No failed downloads to retry")
+        return
+
+    print(f"Retrying {len(failed_tickers)} failed downloads")
+
+    # Remove failed tickers from main list first
+    args.remove_tickers = ",".join(failed_tickers)
     remove_tickers(args)
-    download_parallel_quotes(bad_list, args)
-    # bad_list = open(''.join(list_location.split('.')[:-1]) + '_failed_list.txt', 'r').read().split('\n')
-    # bad_list = [bl for bl in bad_list if bl != '']
-    # args.remove_tickers = ','.join(bad_list)
-    # remove_tickers(args)
+
+    # Try downloading again
+    download_parallel_quotes(failed_tickers, args)
 
 
-def download_data():
-    args = parser()
-    check_arguments_errors(args)
-    if args.add_tickers == "" and args.remove_tickers == "":
-        tickers = gather_tickers(args.ticker_location)
-        download_parallel_quotes(tickers, args)
-        if args.multitry:
-            do_multitry(args)
-    elif args.add_tickers != "":
-        download_quotes(args)
-    elif args.remove_tickers != "":
-        remove_tickers(args)
-    else:
-        print("Use -h for more info.")
+def main():
+    """Main function"""
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    try:
+        check_arguments(args)
+
+        if args.add_tickers:
+            add_tickers(args)
+        elif args.remove_tickers:
+            remove_tickers(args)
+        else:
+            # Download all tickers from the list
+            if not os.path.exists(args.ticker_location):
+                print(f"Ticker file {args.ticker_location} does not exist")
+                print("Use --add_tickers to add some tickers first")
+                return
+
+            tickers = gather_tickers(args.ticker_location)
+            if not tickers:
+                print("No tickers found in ticker file")
+                print("Use --add_tickers to add some tickers first")
+                return
+
+            print(f"Downloading data for {len(tickers)} tickers")
+            download_parallel_quotes(tickers, args)
+
+            if args.multitry:
+                retry_failed_downloads(args)
+
+    except KeyboardInterrupt:
+        print("\nDownload interrupted by user")
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 if __name__ == "__main__":
-    download_data()
+    main()
